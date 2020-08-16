@@ -30,7 +30,7 @@ fn error_exit(msg: &str, code: i32) -> ! {
 fn main() {
 	let clap_matches = clap::App::new("quadtree_img")
 		.version("0.1.0")
-		.author("|x| Some(x[0]) <undisclosed@example.com>")
+		.author("vkcz")
 		.about("Converts to and from a quadtree-based image compression format (QTI).")
 		.arg_from_usage("-i, --into 'Convert the input file from PNG or JFIF to QTI'")
 		.arg_from_usage("-f, --from 'Convert the input file from QTI to PNG'")
