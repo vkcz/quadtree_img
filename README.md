@@ -28,7 +28,14 @@ compressed as QTI will often be quite lossy, while images that are efficiently c
 
 ## Compression
 
-`TODO`
+Quadtree-based compression is dependent on the idea that most images have significant areas of the same color (or very similar color, which is quantized to the same color).
+Areas that are filled with the same color are represented by large squares, and edges between areas or within more chaotic areas are divided into smaller squares to preserve
+detail.
+
+The compression of an image in QTI compared to a moderate-efficiency PNG is typically 1.5x to 4x (but can be more extreme), depending on the input image and compression
+parameters. Usually, the compression factor derived from the parameters is roughly inversely proportional to the quality of the resulting compressed image.
+
+Images with large areas of the same color (such as cartoons) will be compressed efficiently as QTI, while noisier and more complex images (such as photos) would not get significant efficiency gains from QTI, except with certain combinations of parameters that would result in a major decrease in quality.
 
 ## Performance
 
