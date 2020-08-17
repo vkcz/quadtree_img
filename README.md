@@ -35,6 +35,9 @@ detail.
 The compression of an image in QTI compared to a moderate-efficiency PNG is typically 1.5x to 4x (but can be more extreme), depending on the input image and compression
 parameters. Usually, the compression factor derived from the parameters is roughly inversely proportional to the quality of the resulting compressed image.
 
+Applying [`oxipng`](https://github.com/shssoichiro/oxipng) or a comparable PNG optimizer to the relevant images will reduce the relevant efficiency of QTI (by increasing the efficiency of PNG). QTI, however,
+unlike PNG, can be made more efficient by running it through a generic lossless compression algorithm such as `xz`.
+
 Images with large areas of the same color (such as cartoons) will be compressed efficiently as QTI, while noisier and more complex images (such as photos) would not get significant efficiency gains from QTI, except with certain combinations of parameters that would result in a major decrease in quality.
 
 ## Performance
