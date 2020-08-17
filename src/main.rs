@@ -34,6 +34,11 @@ fn main() {
 		.about("Converts to and from a quadtree-based image compression format (QTI).")
 		.arg_from_usage("-i, --into 'Convert the input file from PNG or JFIF to QTI'")
 		.arg_from_usage("-f, --from 'Convert the input file from QTI to PNG'")
+		.arg_from_usage("-d, --dedup=[N] 'Color distance threshold for palette deduplication (--into only); defaults to 256'")
+		.arg_from_usage("-b, --blur=[N] 'Amount of precompression blur (--into only); defaults to 1'")
+		.arg_from_usage("-s, --sensitivity=[N] 'Noise sensitivity as a fraction S/(S+1) (--into only); defaults to 63/64'")
+		.arg_from_usage("-t, --trim=[N] 'Number of times to trim output (--into only); defaults to 0'")
+		.arg_from_usage("-w, --width=[N] 'Output image width (and, for now, also height) (--from only); must be a power of two; defaults to 512'")
 		.arg_from_usage("<INPUT> 'Path to input file`")
 		.arg_from_usage("[OUTPUT] 'Path to output file; defaults to INPUT with a modified file extension`")
 		.get_matches();
@@ -55,15 +60,36 @@ fn main() {
 					error_exit(msg, code)
 				}
 			}.into_rgba();
-			// TODO: Allow configuration of palette generation
+			let (dedup, blur, sensitivity, trim) = (
+				match clap_matches.value_of("dedup").unwrap_or("256").parse() {
+					Ok(n) => n,
+					Err(_) => error_exit("Non-numeric value for dedup", 2)
+				},
+				match clap_matches.value_of("blur").unwrap_or("1").parse() {
+					Ok(n) => n,
+					Err(_) => error_exit("Non-numeric value for blur", 2)
+				},
+				match clap_matches.value_of("sensitivity").unwrap_or("63").parse::<usize>() {
+					Ok(n) => (16384 * n) / (n + 1),
+					Err(_) => error_exit("Non-numeric value for sensitivity", 2)
+				},
+				match clap_matches.value_of("trim").unwrap_or("0").parse::<usize>() {
+					Ok(n) => n,
+					Err(_) => error_exit("Non-numeric value for trim", 2)
+				}
+			);
 			let palette = quadtree_img::quantize::generate_palette::
-				<quadtree_img::quantize::PaletteView5>(&source, 512);
+				<quadtree_img::quantize::PaletteView3>(&source, dedup);
 			let mut tree: QuadtreeNode<_> = Default::default();
-			// TODO: Allow configuration of sensitivity
-			match tree.from_image(&source, &palette, 15872) {
+			match tree.from_image(&source, &palette, sensitivity, blur) {
 				Ok(()) => (),
 				// TODO: Add support for non-square/non-power-of-two images
 				Err(_) => error_exit("Input image has invalid dimensions", 4)
+			}
+			for _ in 0..trim {
+				// TODO: Allow runtime configuration of trim depth
+				// And perhaps improve trim with a sensitivity parameter?
+				tree.trim(6);
 			}
 			// `.expect()` is valid here, because the only error that can occur here
 			// is a color in the quadtree out of range of the palette, but since the
@@ -91,13 +117,16 @@ fn main() {
 				Ok(_) => (),
 				Err(_) => error_exit("Could not read from input file", 3)
 			}
-			let (tree, palette): (_, quadtree_img::quantize::PaletteView5) =
+			let (tree, palette): (_, quadtree_img::quantize::PaletteView3) =
 				match QuadtreeNode::from_qti(&source_data) {
 				Ok((t, p)) => (t, p),
 				Err(_) => error_exit("Invalid image data", 4)
 			};
-			// TODO: Allow configuration of output size
-			let mut output = image::RgbaImage::new(512, 512);
+			let width = match clap_matches.value_of("width").unwrap_or("512").parse() {
+				Ok(n) => n,
+				Err(_) => error_exit("Non-numeric value for width", 2)
+			};
+			let mut output = image::RgbaImage::new(width, width);
 			match tree.to_image(&mut output, &palette, None, None) {
 				Ok(_) => (),
 				Err(e) => {
