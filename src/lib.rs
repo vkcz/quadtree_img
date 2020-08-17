@@ -140,7 +140,8 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 		&mut self,
 		img: &image::RgbaImage,
 		palette: &P,
-		sensitivity: usize
+		sensitivity: usize,
+		blur: f32
 	) -> Result<(), AnalyzeError> {
 		// Validate image size
 		if img.width() != img.height() {
@@ -150,7 +151,7 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 			return Err(AnalyzeError::NonPowerOfTwo);
 		}
 
-		let palettified = quantize::quantize_to_palette(img, palette, 0.);
+		let palettified = quantize::quantize_to_palette(img, palette, blur);
 		match self.mount(&palettified, palette, None, None, sensitivity) {
 			Ok(_) => (),
 			Err(_) => unreachable!("error in mounting")
