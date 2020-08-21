@@ -1,6 +1,6 @@
 [package]
 name = "quadtree_img"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["vkcz"]
 edition = "2018"
 description = "A quadtree-based image compression system and reference implementation"
