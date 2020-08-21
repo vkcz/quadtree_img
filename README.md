@@ -35,11 +35,13 @@ detail.
 The compression of an image in QTI compared to a moderate-efficiency PNG is typically 1.5x to 4x (but can be more extreme), depending on the input image and compression
 parameters. Usually, the compression factor derived from the parameters is roughly inversely proportional to the quality of the resulting compressed image.
 
-Applying [`oxipng`](https://github.com/shssoichiro/oxipng) or a comparable PNG optimizer to the relevant images will reduce the relevant efficiency of QTI (by increasing the efficiency of PNG). QTI, however,
-unlike PNG, can be made more efficient by running it through a generic lossless compression algorithm such as `xz`.
+Applying [`oxipng`](https://github.com/shssoichiro/oxipng) or a comparable PNG optimizer to the relevant images will reduce the relevant efficiency of QTI (by increasing the
+efficiency of PNG). QTI, however, unlike PNG, can be made more efficient by running it through a generic lossless compression algorithm such as `xz`.
 
-Images with large areas of the same color (such as cartoons) will be compressed efficiently as QTI, while noisier and more complex images (such as photos) would not get significant efficiency gains from QTI, except with certain combinations of parameters that would result in a major decrease in quality.
+Images with large areas of the same color (such as cartoons) will be compressed efficiently as QTI, while noisier and more complex images (such as photos) would not get
+significant efficiency gains from QTI, except with certain combinations of parameters that would result in a major decrease in quality.
 
 ## Performance
 
-`TODO`
+Applying `quadtree_img` to compress a 2048x2048 6.6 MB PNG photo takes 12.5 to 14 seconds, and decompressing the resultant QTI back to a slightly lossy 2048x2048 5.1 MB PNG
+takes 1.6 to 2.2 seconds. The tests giving these results were performed on a 3.2 GHz x86_64 processor with 4GB RAM.
