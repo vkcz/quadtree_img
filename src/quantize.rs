@@ -11,7 +11,7 @@ pub trait Palette: Default {
 	/// Must be `1 <= WIDTH <= 32`, because 0 bits wouldn't really be a palette
 	/// and more than 32 bits would be more efficiently represented
 	/// as direct RGBA.
-	const WIDTH: u8;
+	fn width(&self) -> u8;
 	/// Uses an instance of the implementing type to convert a number
 	/// representing a palette entry into an RGBA value.
 	///
@@ -28,9 +28,6 @@ pub trait Palette: Default {
 /// dynamic length (`Vec`s, that is).
 pub trait DynamicPalette: Palette + From<Vec<Color>> {}
 
-/// All suitable types should have `DynamicPalette` automatically implemented.
-impl<T: Palette + From<Vec<Color>>> DynamicPalette for T {}
-
 /// Used internally to assist `generic_palette_struct`.
 macro_rules! generic_palette_doc {
 	($e:expr) => { concat!("A simple implementer of `Palette`; ", $e, " bits.") };
@@ -45,7 +42,7 @@ macro_rules! generic_palette_struct {
 			pub colors: [Color; 1 << $n],
 		}
 		impl Palette for $i {
-			const WIDTH: u8 = $n;
+			fn width(&self) -> u8 { $n }
 			fn to_rgba(&self, c: u32) -> Result<Color, ()> {
 				self.colors.get(c as usize).ok_or(()).map(|x| *x)
 			}
@@ -79,7 +76,7 @@ macro_rules! palette_view_struct {
 			pub colors: Box<[Color]>,
 		}
 		impl Palette for $i {
-			const WIDTH: u8 = $n;
+			fn width(&self) -> u8 { $n }
 			fn to_rgba(&self, c: u32) -> Result<Color, ()> {
 				if c > 1 << $n {
 					Err(())
@@ -121,6 +118,37 @@ palette_view_struct!(PaletteView5 5, "five");
 palette_view_struct!(PaletteView6 6, "six");
 palette_view_struct!(PaletteView7 7, "seven");
 palette_view_struct!(PaletteView8 8, "eight");
+
+#[derive(Debug)]
+pub struct DynamicPaletteView {
+	pub colors: Box<[Color]>
+}
+
+impl Palette for DynamicPaletteView {
+	fn width(&self) -> u8 {
+		(31 - (self.colors.len() as u32).leading_zeros()) as u8
+	}
+	fn to_rgba(&self, c: u32) -> Result<Color, ()> {
+		Ok(*(self.colors.get(c as usize).unwrap_or(&image::Rgba([0; 4]))))
+	}
+	fn get_slice(&self) -> Option<&[Color]> {
+		Some(&self.colors[..1 << self.width()])
+	}
+}
+
+impl Default for DynamicPaletteView {
+	fn default() -> Self {
+		DynamicPaletteView { colors: Default::default() }
+	}
+}
+
+impl From<Vec<Color>> for DynamicPaletteView {
+	fn from(v: Vec<Color>) -> Self {
+		DynamicPaletteView { colors: v.into_boxed_slice() }
+	}
+}
+
+impl DynamicPalette for DynamicPaletteView {}
 
 fn abs_sub(a: u8, b: u8) -> u8 {
 	(a as i16 - b as i16).abs() as u8
@@ -225,15 +253,13 @@ pub fn generate_palette<P: DynamicPalette>(
 /// before quantization; the extent to which this is done is controlled by `blur`.
 pub fn quantize_to_palette<P: Palette>(
 	img: &image::RgbaImage,
-	palette: &P,
-	blur: f32
+	palette: &P
 ) -> Vec<u32> {
 	let palette_colors = palette.get_slice().map(|x| x.to_owned())
-		.unwrap_or_else(|| (0..1 << P::WIDTH)
+		.unwrap_or_else(|| (0..1 << palette.width())
 			.map(|n| palette.to_rgba(n as u32).unwrap())
 			.collect::<Vec<_>>());
-	let img_tr = if blur == 0. { img.to_owned() } else { image::imageops::blur(img, blur) };
-	img_tr.pixels()
+	img.pixels()
 		.map(|pix| palette_colors.iter()
 			.enumerate()
 			.map(|(ind, col)| (color_distance(pix, col), ind as u32))
