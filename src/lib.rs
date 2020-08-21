@@ -4,6 +4,8 @@ use bitvec::vec::BitVec;
 
 use quantize::{Palette, DynamicPalette};
 
+use std::collections::HashMap;
+
 /// A `BitVec` variant ideal for encoding and decoding quadtrees.
 type QuadtreeEncodeBitVec = BitVec<bitvec::order::Msb0, u8>;
 
@@ -18,7 +20,7 @@ type QuadtreeEncodeBitVec = BitVec<bitvec::order::Msb0, u8>;
 #[derive(Clone, Debug, Default)]
 pub struct QuadtreeNode<P: Palette + Default> {
 	pub color: u32,
-	pub sections: Option<[Box<QuadtreeNode<P>>; 4]>,
+	pub sections: Option<Box<[QuadtreeNode<P>; 4]>>,
 	_pal: std::marker::PhantomData<P>
 }
 
@@ -69,6 +71,15 @@ pub enum MountError {
 	ColorOutOfRange,
 }
 
+fn color_lerp(a: quantize::Color, b: quantize::Color, n: f64) -> quantize::Color {
+	image::Rgba::<u8>([
+		(((b.0[0] as f64) - (a.0[0] as f64)) * n + a.0[0] as f64) as u8,
+		(((b.0[1] as f64) - (a.0[1] as f64)) * n + a.0[1] as f64) as u8,
+		(((b.0[2] as f64) - (a.0[2] as f64)) * n + a.0[2] as f64) as u8,
+		(((b.0[3] as f64) - (a.0[3] as f64)) * n + a.0[3] as f64) as u8,
+	])
+}
+
 impl<P: Palette + Default> QuadtreeNode<P> {
 	/// Attempts to generate an image into the supplied buffer
 	/// from this quadtree node and its "branches" and "leaves".
@@ -85,7 +96,8 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 		img: &mut image::RgbaImage,
 		palette: &P,
 		size: Option<u32>,
-		start_pos: Option<(u32, u32)>
+		start_pos: Option<(u32, u32)>,
+		gradient: bool
 	) -> Result<(), DrawError> {
 		// Check input validity
 		if img.width() != img.height() {
@@ -112,19 +124,41 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 		// Recursion
 		if curr_size > 1 {
 			if let Some(ref sects) = self.sections {
-				let positions = [
-					(curr_pos.0, curr_pos.1),
-					(curr_pos.0 + curr_size / 2, curr_pos.1),
-					(curr_pos.0, curr_pos.1 + curr_size / 2),
-					(curr_pos.0 + curr_size / 2, curr_pos.1 + curr_size / 2),
-				];
-				for (ind, section) in sects.iter().enumerate() {
-					section.to_image(
-						img,
-						palette,
-						Some(curr_size / 2),
-						Some(positions[ind]),
-					)?;
+				if gradient && sects.iter().all(|s| s.sections.is_none()) {
+					for row in curr_pos.1..(curr_pos.1 + curr_size) {
+						for col in curr_pos.0..(curr_pos.0 + curr_size) {
+							let sect_colors = sects.iter()
+								.map(|s| palette.to_rgba(s.color))
+								.fold(Ok(Vec::new()), |v, n| match (v, n) {
+									(Ok(mut l), Ok(c)) => { l.push(c); Ok(l) },
+									_ => Err(DrawError::ColorOutOfRange)
+								})?;
+							let x_n = ((col - curr_pos.0) as f64) / curr_size as f64;
+							let y_n = ((row - curr_pos.1) as f64) / curr_size as f64;
+							let imm_c = color_lerp(
+								color_lerp(sect_colors[0], sect_colors[1], x_n),
+								color_lerp(sect_colors[2], sect_colors[3], x_n),
+								y_n
+							);
+							img.put_pixel(col, row, imm_c);
+						}
+					}
+				} else {
+					let positions = [
+						(curr_pos.0, curr_pos.1),
+						(curr_pos.0 + curr_size / 2, curr_pos.1),
+						(curr_pos.0, curr_pos.1 + curr_size / 2),
+						(curr_pos.0 + curr_size / 2, curr_pos.1 + curr_size / 2),
+					];
+					for (ind, section) in sects.iter().enumerate() {
+						section.to_image(
+							img,
+							palette,
+							Some(curr_size / 2),
+							Some(positions[ind]),
+							gradient
+						)?;
+					}
 				}
 			}
 		}
@@ -136,12 +170,16 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 	/// to the nearest entries in the palette.
 	///
 	/// See documentation on `mount` for the meaning of `sensitivity`.
+	///
+	/// `blur` is the amount of Gaussian blur to apply to the image before
+	/// quadtreeifying (to remove noise).
 	pub fn from_image(
 		&mut self,
 		img: &image::RgbaImage,
 		palette: &P,
 		sensitivity: usize,
-		blur: f32
+		blur: f32,
+		gradient: bool
 	) -> Result<(), AnalyzeError> {
 		// Validate image size
 		if img.width() != img.height() {
@@ -151,8 +189,12 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 			return Err(AnalyzeError::NonPowerOfTwo);
 		}
 
-		let palettified = quantize::quantize_to_palette(img, palette, blur);
-		match self.mount(&palettified, palette, None, None, sensitivity) {
+		let img_tr = if blur == 0. { img.to_owned() } else { image::imageops::blur(img, blur) };
+		let palettified = quantize::quantize_to_palette(
+			&img_tr,
+			palette
+		);
+		match self.mount(&palettified, palette, None, None, sensitivity, gradient) {
 			Ok(_) => (),
 			Err(_) => unreachable!("error in mounting")
 		}
@@ -177,7 +219,8 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 		palette: &P,
 		size: Option<usize>,
 		start_pos: Option<(usize, usize)>,
-		sensitivity: usize
+		sensitivity: usize,
+		gradient: bool
 	) -> Result<(), MountError> {
 		if !image.len().is_power_of_two() || image.len().trailing_zeros() % 2 == 1 {
 			return Err(MountError::InvalidSize);
@@ -191,39 +234,58 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 			(row * row_len + start_pos.0)..(row * row_len + start_pos.0 + size)
 			].iter())
 			.fold(std::collections::HashMap::new(), |mut h, n| {
-				*h.entry(n).or_insert(0) += 1;
+				*h.entry(n).or_insert(0) += 1isize;
 				h
 			});
-		let abundance_res = abundance_map.iter()
-			.map(|e| (e.1, e.0))
-			.max()
-			.unwrap();
+		let mut abundance_sort = abundance_map.iter()
+			.map(|e| (-e.1, e.0))
+			.collect::<Vec<_>>();
+		abundance_sort.sort();
+		let abundance_res = abundance_sort[0];
 		self.color = **abundance_res.1;
 		// Validate color. This should be validated for every pixel, but
 		// due to recursion that goes down through every pixel, it will be handled.
-		if self.color > 1 << P::WIDTH {
+		if self.color > 1 << palette.width() {
 			return Err(MountError::ColorOutOfRange);
 		}
 		// Recursion
-		if size > 1 && *abundance_res.0 < (sensitivity * size * size) / 16384 {
-			self.sections = Some([ // refactor?
-				Box::new(Default::default()),
-				Box::new(Default::default()),
-				Box::new(Default::default()),
-				Box::new(Default::default()),
-			]);
-			for sect_ind in 0..4 {
-				self.sections.as_mut().unwrap()[sect_ind]
-					.mount(
-						image,
-						palette,
-						Some(size / 2),
-						Some((
-							start_pos.0 + (sect_ind & 1) * (size / 2),
-							start_pos.1 + (sect_ind >> 1) * (size / 2),
-						)),
-						sensitivity
-					)?;
+		if size > 1 && (-abundance_res.0 as usize) < (sensitivity * size * size) / 16384 {
+			self.sections = Some(Default::default());
+			let abundance_four = abundance_sort.iter().chain(std::iter::repeat(&(0, &&0)).take(4)).take(4);
+			if gradient && size > 2 && abundance_four.map(|x| if -x.0 as usize > (sensitivity * size * size) / 65536
+					{ -x.0 as usize } else { 0 }).sum::<usize>() > (sensitivity * size * size) / 16384 {
+				for sect_ind in 0..4 {
+					let off = size / 4;
+					let x_off = (sect_ind & 1) * 6 * off / 2;
+					let y_off = (sect_ind & 2) * 3 * off / 2;
+					let mut abundance_sort = ((start_pos.1 + y_off)..(start_pos.1 + y_off + off)).flat_map(|row| image[
+						(row * row_len + start_pos.0 + x_off)..(row * row_len + start_pos.0 + x_off + off)
+						].iter())
+						.fold(std::collections::HashMap::new(), |mut h, n| {
+							*h.entry(n).or_insert(0) += 1;
+							h
+						})
+						.into_iter()
+						.map(|e| (-e.1, e.0))
+						.collect::<Vec<_>>();
+					abundance_sort.sort();
+					self.sections.as_mut().unwrap()[sect_ind].color = *abundance_sort[0].1;
+				}
+			} else {
+				for sect_ind in 0..4 {
+					self.sections.as_mut().unwrap()[sect_ind]
+						.mount(
+							image,
+							palette,
+							Some(size / 2),
+							Some((
+								start_pos.0 + (sect_ind & 1) * (size / 2),
+								start_pos.1 + (sect_ind >> 1) * (size / 2),
+							)),
+							sensitivity,
+							gradient
+						)?;
+				}
 			}
 		}
 		Ok(())
@@ -243,14 +305,14 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 		palette: &P
 	) -> Result<(), EncodeError> {
 		// Validate color value
-		if self.color >= 1 << P::WIDTH {
+		if self.color >= 1 << palette.width() {
 			return Err(EncodeError::ColorOutOfRange);
 		}
 		// Bit to indicate subsections
 		buffer.push(self.sections.is_some());
 		// Color number
-		for bit_ind in 0..P::WIDTH {
-			buffer.push(self.color & (1 << (P::WIDTH - bit_ind - 1)) != 0);
+		for bit_ind in 0..palette.width() {
+			buffer.push(self.color & (1 << (palette.width() - bit_ind - 1)) != 0);
 		}
 		// Recursion
 		if let Some(ref sects) = self.sections {
@@ -276,25 +338,20 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 		mut curr_ind: usize
 	) -> Result<usize, DecodeError> {
 		// Validate data quantity
-		if buffer.len() - curr_ind < P::WIDTH as usize {
+		if buffer.len() - curr_ind < (palette.width()) as usize {
 			return Err(DecodeError::InsufficientData);
 		}
 		// Extract current node
 		let mut n = 0;
-		for bit_ind in 0..P::WIDTH {
-			n |= (buffer[curr_ind + bit_ind as usize + 1] as u32) << (P::WIDTH - bit_ind - 1);
+		for bit_ind in 0..(palette.width()) {
+			n |= (buffer[curr_ind + bit_ind as usize + 1] as u32) << (palette.width() - bit_ind - 1);
 		}
 		self.color = n;
 		// Recursion
 		let should_recurse = buffer[curr_ind];
-		curr_ind += 1 + P::WIDTH as usize;
+		curr_ind += 1 + palette.width() as usize;
 		if should_recurse {
-			self.sections = Some([ // refactor?
-				Box::new(Default::default()),
-				Box::new(Default::default()),
-				Box::new(Default::default()),
-				Box::new(Default::default()),
-			]);
+			self.sections = Some(Default::default());
 			for sect_ind in 0..4 {
 				curr_ind = self.sections.as_mut().unwrap()[sect_ind]
 					.decode(buffer, palette, curr_ind)?;
@@ -309,7 +366,13 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 	pub fn trim(&mut self, depth: isize) {
 		if let Some(sections) = &mut self.sections {
 			if depth <= 0 && sections.iter().all(|s| s.sections.is_none()) {
-				self.sections = None;
+				// Count unique colors
+				let col_f = sections.iter().fold(HashMap::new(),
+					|mut m, e| { *m.entry(e.color).or_insert(0) += 1; m });
+				let freq = col_f.values().collect::<Vec<_>>();
+				if freq.len() == 3 || (freq.len() == 2 && **freq.iter().max().unwrap() == 3) {
+					self.sections = None;
+				}
 			} else {
 				sections.iter_mut().for_each(|s| s.trim(depth - 1));
 			}
@@ -323,20 +386,20 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 		ret.extend_from_slice(b"QuTrIm\x01");
 		let mut palette_vec = palette.get_slice()
 			.map(|x| x.to_owned())
-			.unwrap_or_else(|| (0..P::WIDTH << 1)
+			.unwrap_or_else(|| (0..palette.width() << 1)
 				.map(|n| palette.to_rgba(n as u32).unwrap())
 				.collect::<Vec<_>>());
-		palette_vec.resize(1 << P::WIDTH, image::Rgba([0; 4]));
-		let palette_len = std::cmp::max((1 << P::WIDTH) - palette_vec.iter()
+		palette_vec.resize(1 << palette.width(), image::Rgba([0; 4]));
+		let palette_len = std::cmp::max((1 << palette.width()) - palette_vec.iter()
 			.rev()
 			.take_while(|c| **c == image::Rgba([0; 4]))
 			.count(),
-			(9 * (1 << P::WIDTH) + 15) / 16);
-		let approx_len = (palette_len as f64 * 16. / (1 << P::WIDTH) as f64)
-			.ceil() as u32 * (1 << P::WIDTH) / 16;
+			(9 * (1 << palette.width()) + 15) / 16);
+		let approx_len = (palette_len as f64 * 16. / (1 << palette.width()) as f64)
+			.ceil() as u32 * (1 << palette.width()) / 16;
 		// Length indicator
-		ret.push((((approx_len * 16) / (1 << P::WIDTH) - 9) << 5) as u8 |
-			(P::WIDTH - 1));
+		ret.push((((approx_len * 16) / (1 << palette.width()) - 9) << 5) as u8 |
+			(palette.width() - 1));
 		// Palette
 		for c in 0..approx_len {
 			ret.extend_from_slice(&palette.to_rgba(c).unwrap().0);
@@ -349,7 +412,7 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 	}
 }
 
-impl<'a, P: DynamicPalette + Default> QuadtreeNode<P> {
+impl<'a, P: DynamicPalette + Default + std::fmt::Debug> QuadtreeNode<P> {
 	/// Derives a palette and quadtree from the data of a QTI file.
 	pub fn from_qti(source: &[u8]) -> Result<(QuadtreeNode<P>, P), DecodeError> {
 		// Verify header (version 1 is required for compatibility)
@@ -362,10 +425,6 @@ impl<'a, P: DynamicPalette + Default> QuadtreeNode<P> {
 			(pal_size as f64 - 4.).exp2()
 		) as u32;
 		assert!(pal_len.count_ones() <= 4);
-		// Base two logarithm
-		if pal_size > P::WIDTH {
-			return Err(DecodeError::PaletteTooLarge);
-		};
 		// Extract palette
 		let mut pal = vec![];
 		for offset in (0..pal_len).map(|n| n as usize * 4 + 8) {
@@ -376,6 +435,7 @@ impl<'a, P: DynamicPalette + Default> QuadtreeNode<P> {
 				source[offset + 3],
 			]));
 		}
+		pal.resize(1 << pal_size, image::Rgba([0; 4]));
 		let palette = P::from(pal);
 		// Decode tree
 		let tree_bits = QuadtreeEncodeBitVec::from(source);
