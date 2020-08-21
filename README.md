@@ -4,6 +4,8 @@ A quadtree-based image compression system and reference implementation.
 
 Written in Rust; licensed with AGPL3.
 
+Issues and PRs very much welcome.
+
 ## Files
 
 `qti_spec.md` documents the new QTI file format used in this project.
