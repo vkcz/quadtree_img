@@ -79,9 +79,11 @@ fn main() {
 				}
 			);
 			let palette = quadtree_img::quantize::generate_palette::
-				<quadtree_img::quantize::PaletteView3>(&source, dedup);
+				<quadtree_img::quantize::DynamicPaletteView>(&source, dedup);
+			eprintln!("{} colors in generated palette", palette.colors.len());
 			let mut tree: QuadtreeNode<_> = Default::default();
-			match tree.from_image(&source, &palette, sensitivity, blur) {
+			// TODO: Allow runtime configuration of gradient mode
+			match tree.from_image(&source, &palette, sensitivity, blur, true) {
 				Ok(()) => (),
 				// TODO: Add support for non-square/non-power-of-two images
 				Err(_) => error_exit("Input image has invalid dimensions", 4)
@@ -117,7 +119,7 @@ fn main() {
 				Ok(_) => (),
 				Err(_) => error_exit("Could not read from input file", 3)
 			}
-			let (tree, palette): (_, quadtree_img::quantize::PaletteView3) =
+			let (tree, palette): (_, quadtree_img::quantize::DynamicPaletteView) =
 				match QuadtreeNode::from_qti(&source_data) {
 				Ok((t, p)) => (t, p),
 				Err(_) => error_exit("Invalid image data", 4)
@@ -127,7 +129,8 @@ fn main() {
 				Err(_) => error_exit("Non-numeric value for width", 2)
 			};
 			let mut output = image::RgbaImage::new(width, width);
-			match tree.to_image(&mut output, &palette, None, None) {
+			// TODO: Allow runtime configuration of gradient mode
+			match tree.to_image(&mut output, &palette, None, None, true) {
 				Ok(_) => (),
 				Err(e) => {
 					let (msg, code) = match e {
