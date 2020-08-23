@@ -4,7 +4,8 @@ A quadtree-based image compression system and reference implementation.
 
 Written in Rust; licensed with AGPL3.
 
-Issues and PRs very much welcome.
+Issues and PRs very much welcome. Note that versions before `738b48f` do not have a correct `Cargo.lock` and will not compile without modification; unless you're interested in
+the history of this project, there's no reason to be using any versions before that anyway.
 
 ## Files
 
