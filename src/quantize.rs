@@ -263,10 +263,20 @@ pub fn quantize_to_palette<P: Palette>(
 		.unwrap_or_else(|| (0..1 << palette.width())
 			.map(|n| palette.to_rgba(n as u32).unwrap())
 			.collect::<Vec<_>>());
+	let mut quant_cache = HashMap::new();
 	img.pixels()
-		.map(|pix| palette_colors.iter()
-			.enumerate()
-			.map(|(ind, col)| (color_distance(pix, col), ind as u32))
-			.min().unwrap().1)
+		.map(|pix| {
+			match quant_cache.get(pix) {
+				Some(c) => *c,
+				None => {
+					let c = palette_colors.iter()
+						.enumerate()
+						.map(|(ind, col)| (color_distance(pix, col), ind as u32))
+						.min().unwrap().1;
+					quant_cache.insert(pix, c);
+					c
+				}
+			}
+		})
 		.collect::<Vec<_>>()
 }
