@@ -46,5 +46,5 @@ significant efficiency gains from QTI, except with certain combinations of param
 
 ## Performance
 
-Applying `quadtree_img` to compress a 2048x2048 6.6 MB PNG photo takes 12.5 to 14 seconds, and decompressing the resultant QTI back to a slightly lossy 2048x2048 5.1 MB PNG
-takes 1.6 to 2.2 seconds. The tests giving these results were performed on a 3.2 GHz x86_64 processor with 4GB RAM.
+Applying `quadtree_img` to compress a 2048x2048 6.6 MB PNG photo into a 2.3 MB QTI takes 7.5 to 11.5 seconds, and decompressing the resultant QTI back to a slightly lossy
+2048x2048 4.5 MB PNG takes 1.6 to 2.2 seconds. The tests giving these results were performed on a 3.2 GHz x86_64 processor with 4GB RAM.
