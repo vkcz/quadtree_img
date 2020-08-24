@@ -91,6 +91,10 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 	/// The `size` and `start_pos` arguments are for internal recursive
 	/// use; `None` should be passed by outside callers (unless you
 	/// **really** know what you're doing).
+	///
+	/// `gradient` indicates whether leaf nodes will be presented as
+	/// solid squares of color or bilinear gradients between the leaf
+	/// nodes below the relevant branch.
 	pub fn to_image(
 		&self,
 		img: &mut image::RgbaImage,
@@ -173,6 +177,10 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 	///
 	/// `blur` is the amount of Gaussian blur to apply to the image before
 	/// quadtreeifying (to remove noise).
+	///
+	/// `gradient` indicates whether or not to generate the quadtree in a way
+	/// such that the resultant restored image will be of higher quality
+	/// (in theory) if `gradient` is passed as `true` to `to_image`.
 	pub fn from_image(
 		&mut self,
 		img: &image::RgbaImage,
@@ -213,6 +221,8 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 	/// 16384.
 	///
 	/// For outside callers: leave `size` and `start_pos` as `None`.
+	///
+	/// `gradient` has a similar meaning as it does for `from_image`.
 	pub fn mount(
 		&mut self,
 		image: &[u32],
@@ -362,7 +372,8 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 
 	/// "Trims" the tree by removing leaf nodes.
 	///
-	/// Only leaf nodes past a depth of `depth` will be removed.
+	/// Only leaf nodes past a depth of `depth` and with color repetition
+	/// will be removed.
 	pub fn trim(&mut self, depth: isize) {
 		if let Some(sections) = &mut self.sections {
 			if depth <= 0 && sections.iter().all(|s| s.sections.is_none()) {

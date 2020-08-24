@@ -119,6 +119,7 @@ palette_view_struct!(PaletteView6 6, "six");
 palette_view_struct!(PaletteView7 7, "seven");
 palette_view_struct!(PaletteView8 8, "eight");
 
+/// A list of colors forming a palette, of a width determined at runtime.
 #[derive(Debug)]
 pub struct DynamicPaletteView {
 	pub colors: Box<[Color]>
@@ -208,6 +209,9 @@ fn color_div(a: BigColor, b: isize) -> Color {
 
 /// Selects a palette of a given size and type through a process similar to
 /// (but not quite the same as) finding the most commonly used colors in the image.
+///
+/// `dedup_thresh` indicates the (squared) limit for how "distant" colors can be
+/// while still being quantized as one color.
 pub fn generate_palette<P: DynamicPalette>(
 	img: &image::RgbaImage,
 	dedup_thresh: u32
