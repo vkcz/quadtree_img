@@ -1,6 +1,6 @@
 [package]
 name = "quadtree_img"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["vkcz"]
 edition = "2018"
 description = "A quadtree-based image compression system and reference implementation"
@@ -11,8 +11,6 @@ categories = ["algorithms", "compression", "graphics"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# Annoyingly, the crate owner for `bitvec` yanks all non-latest versions.
-# You might need to update this.
 bitvec = "0.17.4"
 
 clap = "2.33.3"
