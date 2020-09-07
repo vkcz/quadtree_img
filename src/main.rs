@@ -1,6 +1,8 @@
 use image::error::ImageError;
 
 use quadtree_img::QuadtreeNode;
+use quadtree_img::quantize;
+use quadtree_img::error::DrawError;
 
 use std::fs::File;
 
@@ -78,8 +80,8 @@ fn main() {
 					Err(_) => error_exit("Non-numeric value for trim", 2)
 				}
 			);
-			let palette = quadtree_img::quantize::generate_palette::
-				<quadtree_img::quantize::DynamicPaletteView>(&source, dedup);
+			let palette = quantize::generate_palette::
+				<quantize::palette::DynamicPaletteView>(&source, dedup);
 			eprintln!("{} colors in generated palette", palette.colors.len());
 			let mut tree: QuadtreeNode<_> = Default::default();
 			// TODO: Allow runtime configuration of gradient mode
@@ -119,7 +121,7 @@ fn main() {
 				Ok(_) => (),
 				Err(_) => error_exit("Could not read from input file", 3)
 			}
-			let (tree, palette): (_, quadtree_img::quantize::DynamicPaletteView) =
+			let (tree, palette): (_, quantize::palette::DynamicPaletteView) =
 				match QuadtreeNode::from_qti(&source_data) {
 				Ok((t, p)) => (t, p),
 				Err(_) => error_exit("Invalid image data", 4)
@@ -134,9 +136,9 @@ fn main() {
 				Ok(_) => (),
 				Err(e) => {
 					let (msg, code) = match e {
-						quadtree_img::DrawError::NonSquare |
-						quadtree_img::DrawError::NonPowerOfTwo => ("Invalid output dimensions", 2),
-						quadtree_img::DrawError::ColorOutOfRange => ("Invalid image data", 4)
+						DrawError::NonSquare |
+						DrawError::NonPowerOfTwo => ("Invalid output dimensions", 2),
+						DrawError::ColorOutOfRange => ("Invalid image data", 4)
 					};
 					error_exit(msg, code)
 				}
