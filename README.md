@@ -11,11 +11,11 @@ the history of this project, there's no reason to be using any versions before t
 
 `qti_spec.md` documents the new QTI file format used in this project.
 
-`src/lib.rs` is the main library source module with the submodule dependency from `src/quantize.rs`.
+`src/lib.rs` is the main library source module. It has module dependencies on several other files in `src/node/`.
 
 `src/main.rs` is the source for a CLI tool using the `quadtree_img` library here for converting between PNG (or JFIF) and QTI.
 
-`cargo run` in the project root will run this CLI tool in `src/main.rs`.
+`cargo run` in the project root will run this CLI tool in `src/main.rs`. `--release` is very much advised; it is otherwise quite slow.
 
 As of this writing, the code has no `unsafe`, no warnings, and no `cargo clippy` issues.
 
