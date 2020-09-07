@@ -9,6 +9,9 @@ use std::collections::HashMap;
 /// A `BitVec` variant ideal for encoding and decoding quadtrees.
 type QuadtreeEncodeBitVec = BitVec<bitvec::order::Msb0, u8>;
 
+/// A type for doing things
+type DecodeQueue = Vec<(Vec<(bool, u32)>, usize)>;
+
 /// Node in a quadtree for storing an image.
 ///
 /// May contain subnodes (branch node) or no subnodes and just a color
@@ -309,7 +312,7 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 	/// numbers for its subsections.
 	///
 	/// Palette color numbers are bitwise big-endian.
-	pub fn encode(
+	pub fn encode_v1(
 		&self,
 		buffer: &mut QuadtreeEncodeBitVec,
 		palette: &P
@@ -327,13 +330,13 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 		// Recursion
 		if let Some(ref sects) = self.sections {
 			for section in sects.iter() {
-				section.encode(buffer, palette)?;
+				section.encode_v1(buffer, palette)?;
 			}
 		}
 		Ok(())
 	}
 
-	/// Reads a `BitVec` of the sort that would be output from `.encode()`
+	/// Reads a `BitVec` of the sort that would be output from `.encode_v1()`
 	/// and parses a quadtree from it.
 	///
 	/// Successful return value is the index to which the parser has progressed,
@@ -341,7 +344,7 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 	///
 	/// 0 should be passed for `curr_ind` by outside callers, unless they
 	/// know what they're doing and have a good reason otherwise.
-	pub fn decode(
+	pub fn decode_v1(
 		&mut self,
 		buffer: &QuadtreeEncodeBitVec,
 		palette: &P,
@@ -364,10 +367,26 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 			self.sections = Some(Default::default());
 			for sect_ind in 0..4 {
 				curr_ind = self.sections.as_mut().unwrap()[sect_ind]
-					.decode(buffer, palette, curr_ind)?;
+					.decode_v1(buffer, palette, curr_ind)?;
 			}
 		}
 		Ok(curr_ind)
+	}
+
+	/// Reads a `BitVec` of the sort that would be output from `.encode_v2()`
+	/// and parses a quadtree from it.
+	///
+	/// Not yet implemented. I have no idea what I'm doing.
+	/// Big TODO.
+	pub fn decode_v2(
+		&mut self,
+		buffer: &QuadtreeEncodeBitVec,
+		palette: &P,
+		queue: Option<&mut DecodeQueue>,
+	) -> Result<DecodeQueue, DecodeError> {
+		// To get rid of unused variable warnings
+		dbg!(buffer, queue, palette.width());
+		Err(DecodeError::InsufficientData)
 	}
 
 	/// "Trims" the tree by removing leaf nodes.
@@ -417,7 +436,7 @@ impl<P: Palette + Default> QuadtreeNode<P> {
 		}
 		// Quadtree
 		let mut bit_buf = QuadtreeEncodeBitVec::new();
-		self.encode(&mut bit_buf, palette)?;
+		self.encode_v1(&mut bit_buf, palette)?;
 		ret.extend_from_slice(bit_buf.as_slice());
 		Ok(ret)
 	}
@@ -427,7 +446,7 @@ impl<'a, P: DynamicPalette + Default + std::fmt::Debug> QuadtreeNode<P> {
 	/// Derives a palette and quadtree from the data of a QTI file.
 	pub fn from_qti(source: &[u8]) -> Result<(QuadtreeNode<P>, P), DecodeError> {
 		// Verify header (version 1 is required for compatibility)
-		if &source[..7] != b"QuTrIm\x01" {
+		if &source[..6] != b"QuTrIm" {
 			return Err(DecodeError::MissingHeader);
 		}
 		let pal_size = (source[7] & 0x1f) + 1;
@@ -449,9 +468,18 @@ impl<'a, P: DynamicPalette + Default + std::fmt::Debug> QuadtreeNode<P> {
 		pal.resize(1 << pal_size, image::Rgba([0; 4]));
 		let palette = P::from(pal);
 		// Decode tree
-		let tree_bits = QuadtreeEncodeBitVec::from(source);
+		let tree_bits = QuadtreeEncodeBitVec::from(&source[8 + 4 * pal_len as usize..]);
 		let mut tree: QuadtreeNode<P> = Default::default();
-		tree.decode(&tree_bits, &palette, 64 + 32 * pal_len as usize)?;
-		Ok((tree, palette))
+		match source[6] {
+			1 => { // Version one, documented in older versions of qti_spec
+				tree.decode_v1(&tree_bits, &palette, 0)?;
+				Ok((tree, palette))
+			},
+			2 => { // Version two (current) -- DOES NOT WORK; TODO
+				tree.decode_v2(&tree_bits, &palette, None)?;
+				Ok((tree, palette))
+			},
+			_ => Err(DecodeError::MissingHeader)
+		}
 	}
 }
